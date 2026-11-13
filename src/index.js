@@ -98,14 +98,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Initialize automated background { Mine Daily Yield } scheduler
   startAutoYieldScheduler();
 
-  // Initialize automated continuous real-time & daily binary settlement scheduler
+  // Initialize automated daily 23:59 binary settlement scheduler (tracks LAST_BINARY_SETTLEMENT_DATE)
   startAutoBinarySettlementScheduler();
-
-  // Initialize automated 23:59 daily settlement schedule
-  scheduleDailyBinarySettlement(async () => {
-    await runDailyBinarySettlement();
-    await runAutoDailyYield();
-  });
 });
 
 process.on('uncaughtException', (err) => {

@@ -14,6 +14,7 @@ const transactionSchema = new mongoose.Schema(
       enum: [
         'DIRECT_REFERRAL_BONUS',
         'BINARY_PAIRING_BONUS',
+        'BINARY_PAIRING_CONFISCATED',
         'MINING_YIELD',
         'WALLET_DEPOSIT',
         'PACKAGE_PURCHASE',

@@ -69,6 +69,8 @@ const userSchema = new mongoose.Schema(
       legATotal: { type: Number, default: 0 },
       legBTotal: { type: Number, default: 0 },
       pairsCount: { type: Number, default: 0 },
+      lastSettledAt: { type: Date, default: null },
+      lastSettledDate: { type: String, default: null },
     },
     wallet: {
       usdBalance: { type: Number, default: 0 },
@@ -84,6 +86,11 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: 0,
       max: 10, // 0 to 7 Star, 8=Crown, 9=2 Crown, 10=3 Crown
+    },
+    preferredLanguage: {
+      type: String,
+      enum: ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'],
+      default: 'en',
     },
     phone: {
       type: String,

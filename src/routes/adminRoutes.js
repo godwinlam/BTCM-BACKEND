@@ -13,6 +13,7 @@ const {
 } = require('../controllers/adminController');
 const {
   listDeposits,
+  getDepositById,
   approveDeposit,
   rejectDeposit,
   getDepositStats,
@@ -21,6 +22,7 @@ const {
 } = require('../controllers/adminDepositController');
 const {
   listWithdrawals,
+  getWithdrawalById,
   approveWithdrawal,
   rejectWithdrawal,
   getWithdrawalStats,
@@ -46,12 +48,14 @@ router.get('/deposits/stats', getDepositStats);
 router.get('/deposits/config', getDepositConfig);
 router.put('/deposits/config', updateDepositConfig);
 router.get('/deposits', listDeposits);
+router.get('/deposits/:id', getDepositById);
 router.post('/deposits/:id/approve', approveDeposit);
 router.post('/deposits/:id/reject', rejectDeposit);
 
 // Withdrawals Management
 router.get('/withdrawals/stats', getWithdrawalStats);
 router.get('/withdrawals', listWithdrawals);
+router.get('/withdrawals/:id', getWithdrawalById);
 router.post('/withdrawals/:id/approve', approveWithdrawal);
 router.post('/withdrawals/:id/reject', rejectWithdrawal);
 

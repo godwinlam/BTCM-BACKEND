@@ -18,6 +18,7 @@ const register = async (req, res) => {
       email,
       password,
       fullName,
+      preferredLanguage,
       referralCode: inputSponsorRef,
       placementUsername,
       positionParent,
@@ -55,11 +56,15 @@ const register = async (req, res) => {
 
     // STRICT BUSINESS RULE: Only a new user who has purchased a mining service package can be placed in the binary placement tree.
     // At registration time, the user is created under their sponsor with unplaced status (binaryParent = null, binaryPosition = null).
+    const validLangs = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'];
+    const chosenLang = validLangs.includes(preferredLanguage) ? preferredLanguage : 'en';
+
     const newUser = new User({
       username: normUsername,
       email: normEmail,
       password,
       fullName: fullName || normUsername,
+      preferredLanguage: chosenLang,
       referralCode: newRefCode,
       sponsor: sponsorUser ? sponsorUser._id : null,
       binaryParent: null,
@@ -181,6 +186,7 @@ const updateProfile = async (req, res) => {
       usdtErc20PayoutAddress,
       usdcPayoutAddress,
       defaultPlacementLeg,
+      preferredLanguage,
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -214,6 +220,11 @@ const updateProfile = async (req, res) => {
 
     if (['A', 'B', 'AUTO'].includes(defaultPlacementLeg)) {
       user.defaultPlacementLeg = defaultPlacementLeg;
+    }
+
+    const validLangs = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'];
+    if (preferredLanguage && validLangs.includes(preferredLanguage)) {
+      user.preferredLanguage = preferredLanguage;
     }
 
     await user.save();
@@ -313,6 +324,32 @@ const submitKyc = async (req, res) => {
   }
 };
 
+/**
+ * Update user language preference
+ */
+const updateLanguage = async (req, res) => {
+  try {
+    const { language } = req.body;
+    const valid = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'];
+    if (!valid.includes(language)) {
+      return res.status(400).json({ success: false, message: 'Invalid language code. Supported: en, zh-TW, zh-CN, ja, ko, es, ru' });
+    }
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    user.preferredLanguage = language;
+    await user.save();
+    return res.status(200).json({
+      success: true,
+      preferredLanguage: user.preferredLanguage,
+      message: 'Language preference saved successfully',
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -320,5 +357,6 @@ module.exports = {
   updateProfile,
   updatePassword,
   submitKyc,
+  updateLanguage,
 };
 

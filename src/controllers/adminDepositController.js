@@ -18,12 +18,32 @@ const listDeposits = async (req, res) => {
     }
 
     const total = await DepositRequest.countDocuments(query);
-    const deposits = await DepositRequest.find(query)
-      .populate('userId', 'username email')
+    const rawDeposits = await DepositRequest.find(query)
+      .populate('userId', 'username email fullName wallet totalInvested starRank')
       .populate('reviewedBy', 'username')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
+
+    const deposits = rawDeposits.map((d) => {
+      const obj = d.toObject ? d.toObject() : d;
+      const strId = obj._id ? obj._id.toString() : String(obj.id || '');
+      const u = obj.userId;
+      return {
+        ...obj,
+        id: strId,
+        _id: strId,
+        userId: u?._id ? u._id.toString() : (u || ''),
+        username: u?.username || obj.username || 'user',
+        email: u?.email || obj.email || '',
+        fullName: u?.fullName || obj.fullName || '',
+        depositAddress: obj.depositAddress || '',
+        reviewedBy: obj.reviewedBy?.username || obj.reviewedBy || null,
+        processedByAdmin: obj.reviewedBy?.username || obj.processedByAdmin || null,
+        processedAt: obj.reviewedAt || obj.processedAt || null,
+        rejectionReason: obj.adminNotes || obj.rejectionReason || '',
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -35,6 +55,73 @@ const listDeposits = async (req, res) => {
         pages: Math.ceil(total / limit),
       },
     });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Get detailed deposit request by ID with user history
+ */
+const getDepositById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deposit = await DepositRequest.findById(id)
+      .populate('userId', 'username email fullName role wallet totalInvested starRank')
+      .populate('reviewedBy', 'username');
+
+    if (!deposit) {
+      return res.status(404).json({ success: false, message: 'Deposit request not found' });
+    }
+
+    const userHistory = await DepositRequest.find({
+      userId: deposit.userId?._id || deposit.userId,
+      _id: { $ne: deposit._id },
+    })
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    const userDepositHistory = userHistory.map((h) => ({
+      id: h._id.toString(),
+      _id: h._id.toString(),
+      amount: h.amount,
+      currency: h.currency,
+      network: h.network,
+      status: h.status,
+      txHash: h.txHash,
+      createdAt: h.createdAt,
+    }));
+
+    const u = deposit.userId;
+    const strId = deposit._id.toString();
+    const formatted = {
+      ...deposit.toObject(),
+      id: strId,
+      _id: strId,
+      userId: u?._id ? u._id.toString() : deposit.userId,
+      username: u?.username || 'user',
+      email: u?.email || '',
+      fullName: u?.fullName || '',
+      depositAddress: deposit.depositAddress || '',
+      reviewedBy: deposit.reviewedBy?.username || null,
+      processedByAdmin: deposit.reviewedBy?.username || null,
+      processedAt: deposit.reviewedAt || null,
+      rejectionReason: deposit.adminNotes || '',
+      user: u ? {
+        id: u._id.toString(),
+        username: u.username,
+        email: u.email,
+        fullName: u.fullName,
+        role: u.role,
+        usdBalance: u.wallet?.usdBalance || 0,
+        btcBalance: u.wallet?.btcBalance || 0,
+        totalInvested: u.totalInvested || 0,
+        starRank: u.starRank || 0,
+      } : null,
+      userDepositHistory,
+    };
+
+    return res.status(200).json({ success: true, deposit: formatted });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -238,6 +325,7 @@ const updateDepositConfig = async (req, res) => {
 
 module.exports = {
   listDeposits,
+  getDepositById,
   approveDeposit,
   rejectDeposit,
   getDepositStats,

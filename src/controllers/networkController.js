@@ -33,6 +33,7 @@ function getNextSettlementDetails() {
 const getSummary = async (req, res) => {
   try {
     let user = await User.findById(req.user._id);
+
     const directCount = await User.countDocuments({ sponsor: user._id });
     const teamCount = await countTotalBinaryDownlines(user._id);
     let starInfo = await evaluateUserStarRank(user._id);
@@ -72,9 +73,9 @@ const getSummary = async (req, res) => {
       name: starInfo.name,
       badge: starInfo.badge,
       personalInvested: starInfo.personalInvested,
-      minPersonalRequired: starInfo.rank >= 9 ? 100000 : (starInfo.rank >= 7 ? 60000 : (starInfo.rank >= 6 ? 30000 : (starInfo.rank >= 5 ? 10000 : (starInfo.rank >= 3 ? 5000 : (starInfo.rank >= 2 ? 1000 : (starInfo.rank >= 1 ? 300 : 100)))))),
+      minPersonalRequired: starInfo.minPersonalRequired,
       directPlacementVolume: starInfo.directSalesVolume,
-      targetVolume: starInfo.rank >= 9 ? 100000000 : (starInfo.rank >= 8 ? 50000000 : (starInfo.rank >= 7 ? 10000000 : (starInfo.rank >= 6 ? 5000000 : (starInfo.rank >= 5 ? 1000000 : (starInfo.rank >= 4 ? 100000 : (starInfo.rank >= 3 ? 50000 : (starInfo.rank >= 2 ? 10000 : (starInfo.rank >= 1 ? 2000 : 1000)))))))),
+      targetVolume: starInfo.targetVolume,
       isOneStarQualified: starInfo.rank >= 1,
       isTwoStarQualified: starInfo.rank >= 2,
       isThreeStarQualified: starInfo.rank >= 3,
@@ -88,7 +89,7 @@ const getSummary = async (req, res) => {
       volumeNeededForNextRank: starInfo.nextRankNeeded,
       personalNeededForNextRank: starInfo.nextRankPersonalNeeded || 0,
       maxDailyPairs: starInfo.maxDailyPairs,
-      dailyPairCapUsdt: starInfo.maxDailyPairs * 1000,
+      dailyPairCapUsdt: starInfo.maxDailyPairs * 100,
       totalPairsReady,
       pendingPaidPairs,
       pendingConfiscatedPairs,
@@ -346,8 +347,9 @@ const placeMember = async (req, res) => {
  */
 const getStarRankingInfo = async (req, res) => {
   try {
+    let user = await User.findById(req.user._id);
+
     const starInfo = await evaluateUserStarRank(req.user._id);
-    const user = await User.findById(req.user._id);
     const settlementDetails = getNextSettlementDetails();
 
     const legA = user.binaryLegs?.legACurrent || 0;
@@ -360,7 +362,8 @@ const getStarRankingInfo = async (req, res) => {
       success: true,
       starRanking: {
         ...starInfo,
-        targetVolume: starInfo.rank >= 9 ? 100000000 : (starInfo.rank >= 8 ? 50000000 : (starInfo.rank >= 7 ? 10000000 : (starInfo.rank >= 6 ? 5000000 : (starInfo.rank >= 5 ? 1000000 : (starInfo.rank >= 4 ? 100000 : (starInfo.rank >= 3 ? 50000 : (starInfo.rank >= 2 ? 10000 : (starInfo.rank >= 1 ? 2000 : 1000)))))))),
+        minPersonalRequired: starInfo.minPersonalRequired,
+        targetVolume: starInfo.targetVolume,
         isOneStarQualified: starInfo.rank >= 1,
         isTwoStarQualified: starInfo.rank >= 2,
         isThreeStarQualified: starInfo.rank >= 3,

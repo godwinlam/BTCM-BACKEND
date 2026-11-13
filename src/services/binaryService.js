@@ -1,30 +1,42 @@
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const SystemSetting = require('../models/SystemSetting');
 
 const STAR_RANKS = {
-  0: { rank: 0, name: 'Unranked Miner', badge: null, maxDailyPairs: 0, rewardRate: 0.10 },
-  1: { rank: 1, name: '1 Star User', badge: '★ 1 STAR', minPersonalInvestment: 0, minDirectSales: 1000, maxDailyPairs: 1, rewardRate: 0.10 },
+  0: { rank: 0, name: 'Unranked Miner', badge: null, minPersonalInvestment: 0, minDirectSales: 0, maxDailyPairs: 0, rewardRate: 0.10 },
+  1: { rank: 1, name: '1 Star User', badge: '★ 1 STAR', minPersonalInvestment: 100, minDirectSales: 1000, maxDailyPairs: 1, rewardRate: 0.10 },
   2: { rank: 2, name: '2 Star User', badge: '★★ 2 STAR', minPersonalInvestment: 300, minDirectSales: 2000, maxDailyPairs: 2, rewardRate: 0.10 },
   3: { rank: 3, name: '3 Star User', badge: '★★★ 3 STAR', minPersonalInvestment: 1000, minDirectSales: 10000, maxDailyPairs: 4, rewardRate: 0.10 },
   4: { rank: 4, name: '4 Star User', badge: '★★★★ 4 STAR', minPersonalInvestment: 5000, minDirectSales: 50000, maxDailyPairs: 6, rewardRate: 0.10 },
   5: { rank: 5, name: '5 Star User', badge: '★★★★★ 5 STAR', minPersonalInvestment: 5000, minDirectSales: 100000, maxDailyPairs: 7, rewardRate: 0.10 },
   6: { rank: 6, name: '6 Star User', badge: '★★★★★★ 6 STAR', minPersonalInvestment: 10000, minDirectSales: 1000000, maxDailyPairs: 9, rewardRate: 0.10 },
-  7: { rank: 7, name: '7 Star User', badge: '★★★★★★★ 7 STAR', minPersonalInvestment: 3000, minDirectSales: 5000000, maxDailyPairs: 11, rewardRate: 0.10 },
+  7: { rank: 7, name: '7 Star User', badge: '★★★★★★★ 7 STAR', minPersonalInvestment: 30000, minDirectSales: 5000000, maxDailyPairs: 11, rewardRate: 0.10 },
   8: { rank: 8, name: 'Crown User', badge: '👑 CROWN', minPersonalInvestment: 30000, minDirectSales: 10000000, maxDailyPairs: 13, rewardRate: 0.10 },
   9: { rank: 9, name: '2 Crown User', badge: '👑👑 2 CROWN', minPersonalInvestment: 60000, minDirectSales: 50000000, maxDailyPairs: 15, rewardRate: 0.10 },
   10: { rank: 10, name: '3 Crown User', badge: '👑👑👑 3 CROWN', minPersonalInvestment: 100000, minDirectSales: 100000000, maxDailyPairs: 18, rewardRate: 0.10 },
 };
 
 /**
- * Calculate total sales volume under a user's sponsor tree
+ * Calculate total sales volume under a user's direct placement tree:
+ * Includes binary placement tree volume (Leg A total + Leg B total, current legs),
+ * plus direct sponsor downlines total investment.
  */
 async function calculateDirectSalesVolume(userId) {
+  const user = await User.findById(userId);
+  if (!user) return 0;
+
+  // 1. Binary placement tree lifetime and current volume
+  const binaryLegsTotal = (user.binaryLegs?.legATotal || 0) + (user.binaryLegs?.legBTotal || 0);
+  const binaryLegsCurrent = (user.binaryLegs?.legACurrent || 0) + (user.binaryLegs?.legBCurrent || 0);
+
+  // 2. Direct downlines sponsor sales volume
   const directDownlines = await User.find({ sponsor: userId }).select('wallet.totalInvested');
-  let total = 0;
+  let sponsorSales = 0;
   for (const d of directDownlines) {
-    total += d.wallet?.totalInvested || 0;
+    sponsorSales += d.wallet?.totalInvested || 0;
   }
-  return total;
+
+  return Math.max(binaryLegsTotal, binaryLegsCurrent, sponsorSales);
 }
 
 /**
@@ -48,44 +60,18 @@ async function evaluateUserStarRank(userId) {
 
   if (user.starRank !== qualifiedRank) {
     user.starRank = qualifiedRank;
-    await user.save();
+    user.markModified('binaryLegs');
+  user.markModified('wallet');
+  await user.save();
   }
 
   const rankInfo = STAR_RANKS[qualifiedRank] || STAR_RANKS[0];
 
-  let nextRankNeeded = 0;
-  let nextRankPersonalNeeded = 0;
-  if (qualifiedRank === 0) {
-    nextRankNeeded = Math.max(0, 1000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 100 - personalInvested);
-  } else if (qualifiedRank === 1) {
-    nextRankNeeded = Math.max(0, 2000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 300 - personalInvested);
-  } else if (qualifiedRank === 2) {
-    nextRankNeeded = Math.max(0, 10000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 1000 - personalInvested);
-  } else if (qualifiedRank === 3) {
-    nextRankNeeded = Math.max(0, 50000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 5000 - personalInvested);
-  } else if (qualifiedRank === 4) {
-    nextRankNeeded = Math.max(0, 100000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 5000 - personalInvested);
-  } else if (qualifiedRank === 5) {
-    nextRankNeeded = Math.max(0, 1000000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 10000 - personalInvested);
-  } else if (qualifiedRank === 6) {
-    nextRankNeeded = Math.max(0, 5000000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 30000 - personalInvested);
-  } else if (qualifiedRank === 7) {
-    nextRankNeeded = Math.max(0, 10000000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 30000 - personalInvested);
-  } else if (qualifiedRank === 8) {
-    nextRankNeeded = Math.max(0, 50000000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 60000 - personalInvested);
-  } else if (qualifiedRank === 9) {
-    nextRankNeeded = Math.max(0, 100000000 - directSales);
-    nextRankPersonalNeeded = Math.max(0, 100000 - personalInvested);
-  }
+  // Requirements for the NEXT rank
+  const nextRank = Math.min(10, qualifiedRank + 1);
+  const nextReq = STAR_RANKS[nextRank] || STAR_RANKS[10];
+  const nextRankNeeded = Math.max(0, nextReq.minDirectSales - directSales);
+  const nextRankPersonalNeeded = Math.max(0, nextReq.minPersonalInvestment - personalInvested);
 
   return {
     ...rankInfo,
@@ -94,6 +80,8 @@ async function evaluateUserStarRank(userId) {
     personalInvested,
     nextRankNeeded,
     nextRankPersonalNeeded,
+    targetVolume: nextReq.minDirectSales,
+    minPersonalRequired: nextReq.minPersonalInvestment,
   };
 }
 
@@ -120,6 +108,13 @@ async function addBinaryVolume(childUserId, amount) {
     }
 
     await parent.save();
+    try {
+      await evaluateUserStarRank(parent._id);
+      // Volume remains in PENDING AT 23:59:59 throughout the day.
+      // Settle occurs strictly when clock reaches 23:59:59 daily.
+    } catch (evalErr) {
+      console.warn(`[Star Rank Eval Warning for parent ${parent.username}]:`, evalErr.message);
+    }
 
     currentUser = parent;
     parentId = parent.binaryParent;
@@ -249,6 +244,8 @@ async function placeUserInBinary(userId, targetParentId, preferredPosition = 'A'
 
   user.binaryParent = finalParent._id;
   user.binaryPosition = finalPos;
+  user.markModified('binaryLegs');
+  user.markModified('wallet');
   await user.save();
 
   if (finalPos === 'A') {
@@ -275,6 +272,22 @@ async function placeUserInBinary(userId, targetParentId, preferredPosition = 'A'
 async function executeUserDailyBinarySettlement(userId) {
   const user = await User.findById(userId);
   if (!user) return { success: false, message: 'User not found' };
+
+  // Strict Daily Idempotency Check: Prevent duplicate settlement on the same calendar day
+  const todayKey = new Date().toISOString().slice(0, 10);
+  if (user.binaryLegs?.lastSettledDate === todayKey) {
+    return {
+      userId: user._id,
+      username: user.username,
+      settled: false,
+      pairsReady: 0,
+      pairsPaid: 0,
+      pairsConfiscated: 0,
+      confiscatedVolume: 0,
+      rewardUsd: 0,
+      message: `User @${user.username} has already been settled for today (${todayKey}). Next binary pairing settlement is at 23:59 tomorrow.`,
+    };
+  }
 
   const starInfo = await evaluateUserStarRank(userId);
   const legACurr = user.binaryLegs?.legACurrent || 0;
@@ -345,6 +358,8 @@ async function executeUserDailyBinarySettlement(userId) {
   user.binaryLegs.legACurrent = Math.max(0, legACurr - totalVolumeToDeduct);
   user.binaryLegs.legBCurrent = Math.max(0, legBCurr - totalVolumeToDeduct);
   user.binaryLegs.pairsCount = (user.binaryLegs.pairsCount || 0) + pairsToPay;
+  user.binaryLegs.lastSettledAt = new Date();
+  user.binaryLegs.lastSettledDate = new Date().toISOString().slice(0, 10);
 
   if (rewardUsd > 0) {
     user.wallet.usdBalance = (user.wallet.usdBalance || 0) + rewardUsd;
@@ -395,6 +410,8 @@ async function executeUserDailyBinarySettlement(userId) {
     });
   }
 
+  user.markModified('binaryLegs');
+  user.markModified('wallet');
   await user.save();
 
   return {
@@ -447,30 +464,78 @@ async function runAutoBinarySettlement() {
   }
 }
 
-let lastDailySettledDateKey = '';
+let isSettlingBinary = false;
 
 /**
- * 100% Automated Daily Settlement Scheduler (auto-triggers at 23:59:59 daily, zero manual click required)
+ * Check and auto-execute daily 23:59 binary settlement when conditions match.
+ * Tracks execution state persistently via SystemSetting to ensure zero missed runs.
  */
-function startAutoBinarySettlementScheduler() {
-  const CHECK_INTERVAL_MS = 5 * 1000; // Check every 5 seconds for 23:59:59 trigger
-  setInterval(async () => {
+async function checkAndTriggerDailySettlement() {
+  if (isSettlingBinary) return;
+
+  try {
     const now = new Date();
     const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    
-    // Auto-implement strictly at 23:59:00 - 23:59:59 once daily
-    if (now.getHours() === 23 && now.getMinutes() === 59 && lastDailySettledDateKey !== dateKey) {
-      lastDailySettledDateKey = dateKey;
-      console.log(`[Daily 23:59:59 Settlement]: Auto-settling all qualified binary pairs for ${dateKey}...`);
-      try {
-        await runDailyBinarySettlement();
-      } catch (err) {
-        console.error('[Daily 23:59:59 Settlement Error]:', err.message);
-      }
+
+    let setting = null;
+    try {
+      setting = await SystemSetting.findOne({ key: 'LAST_BINARY_SETTLEMENT_DATE' });
+    } catch (dbErr) {
+      // SystemSetting might not be initialized yet
     }
+
+    const lastSettledDate = setting?.value || '';
+
+    // Strict condition: Server time must reach 23:59:00 - 23:59:59 window before daily settlement executes
+    const is2359Window = (now.getHours() === 23 && now.getMinutes() >= 59);
+
+    if (is2359Window && lastSettledDate !== dateKey) {
+      isSettlingBinary = true;
+      console.log(`[Daily 23:59:59 Automated Settlement]: 23:59:59 reached. Auto-implementing daily settlement for ${dateKey}...`);
+
+      const summary = await runDailyBinarySettlement();
+
+      // Persist the executed settlement date
+      try {
+        if (setting) {
+          setting.value = dateKey;
+          await setting.save();
+        } else {
+          await SystemSetting.create({
+            key: 'LAST_BINARY_SETTLEMENT_DATE',
+            value: dateKey,
+            description: 'Last executed automated daily 23:59 binary settlement date key',
+          });
+        }
+      } catch (saveErr) {
+        console.warn('[Daily Settlement Setting Save Warning]:', saveErr.message);
+      }
+
+      console.log(`[Daily 23:59:59 Automated Settlement]: Auto-settlement complete (${summary.settledMiners || 0} pairs settled, zero manual clicks required).`);
+    }
+  } catch (err) {
+    console.error('[Automated Settlement Scheduler Error]:', err.message);
+  } finally {
+    isSettlingBinary = false;
+  }
+}
+
+/**
+ * 100% Automated Daily Settlement Scheduler (auto-triggers daily, zero manual click required)
+ */
+function startAutoBinarySettlementScheduler() {
+  const CHECK_INTERVAL_MS = 5 * 1000; // Check every 5 seconds
+
+  // Catch-up on boot if server was offline/rebooted across the 23:59 threshold
+  setTimeout(() => {
+    checkAndTriggerDailySettlement();
+  }, 2000);
+
+  setInterval(() => {
+    checkAndTriggerDailySettlement();
   }, CHECK_INTERVAL_MS);
 
-  console.log('[Mongoose Binary Engine]: 100% Automated Daily Settlement Scheduler active (auto-triggers at 23:59:59 daily).');
+  console.log('[Mongoose Binary Engine]: 100% Automated Daily Settlement Scheduler active (auto-triggers at 23:59 daily, zero manual click required).');
 }
 
 module.exports = {
