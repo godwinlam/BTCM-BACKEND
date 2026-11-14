@@ -297,7 +297,7 @@ const getMineBestInfo = async (req, res) => {
         warmupRule: '48-Hour Hardware Configuration & Burn-In Period before automated daily payouts commence.',
         dailyYieldAutomation: '100% automated system payout deposited straight into user wallet balances daily.',
         directReferralBonus: '10% one-time bonus paid instantly upon downline mining service purchase.',
-        binaryPairingBonus: '10% binary reward (100 USDT per 1,000 USDT pair) calculated and settled daily at 23:59 system time.',
+        binaryPairingBonus: '10% binary reward (100 USDT per 1,000 USDT pair) calculated and settled automatically on next day daily cycle.',
         starRankProgram: '10-Tier Star and Crown leadership ladder (1-Star to 3-Crown) scaling binary caps up to 18 pairs/day.',
       },
     };

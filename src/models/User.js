@@ -71,6 +71,7 @@ const userSchema = new mongoose.Schema(
       pairsCount: { type: Number, default: 0 },
       lastSettledAt: { type: Date, default: null },
       lastSettledDate: { type: String, default: null },
+      pairsAchievedDate: { type: String, default: null },
     },
     wallet: {
       usdBalance: { type: Number, default: 0 },

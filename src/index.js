@@ -53,7 +53,7 @@ app.get('/api/health', async (req, res) => {
     supportedTiers: [100, 300, 1000, 5000, 10000, 30000],
     rules: {
       directReferralBonus: '10% one-time reward on service purchases',
-      binaryPairingBonus: '10% reward per 1,000 pair (100 USDT) for qualified Star & Crown users, settled at 23:59 daily',
+      binaryPairingBonus: '10% reward per 1,000 pair (100 USDT) for qualified Star & Crown users, auto-settled daily on next day cycle',
       contractLifecycle: '1,500 days per ASIC mining package contract',
       yieldWarmup: '48h hardware warm-up rule active before daily yields commence',
     },
@@ -91,14 +91,14 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BTCM Mongoose Backend running on port ${PORT}`);
   console.log(`🍃 Database: MongoDB + Mongoose ODM`);
   console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
-  console.log(`⭐ Star Ranking & 23:59 Daily Binary Settlement active`);
+  console.log(`⭐ Star Ranking & Next Day Daily Binary Settlement active`);
   console.log(`⚡ Automated System { Mine Daily Yield } active (48h warm-up)`);
   console.log(`=======================================================`);
 
   // Initialize automated background { Mine Daily Yield } scheduler
   startAutoYieldScheduler();
 
-  // Initialize automated daily 23:59 binary settlement scheduler (tracks LAST_BINARY_SETTLEMENT_DATE)
+  // Initialize automated next day daily binary settlement scheduler (tracks LAST_BINARY_SETTLEMENT_DATE)
   startAutoBinarySettlementScheduler();
 });
 

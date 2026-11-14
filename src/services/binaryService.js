@@ -107,11 +107,18 @@ async function addBinaryVolume(childUserId, amount) {
       parent.binaryLegs.legBTotal += amount;
     }
 
+    // When pairs are formed for a qualified user, track pairsAchievedDate
+    const pairsReady = Math.min(
+      Math.floor((parent.binaryLegs.legACurrent || 0) / 1000),
+      Math.floor((parent.binaryLegs.legBCurrent || 0) / 1000)
+    );
+    if (pairsReady >= 1 && (parent.wallet?.totalInvested || 0) > 0 && !parent.binaryLegs.pairsAchievedDate) {
+      parent.binaryLegs.pairsAchievedDate = new Date().toISOString().slice(0, 10);
+    }
+
     await parent.save();
     try {
       await evaluateUserStarRank(parent._id);
-      // Volume remains in PENDING AT 23:59:59 throughout the day.
-      // Settle occurs strictly when clock reaches 23:59:59 daily.
     } catch (evalErr) {
       console.warn(`[Star Rank Eval Warning for parent ${parent.username}]:`, evalErr.message);
     }
@@ -123,50 +130,50 @@ async function addBinaryVolume(childUserId, amount) {
 }
 
 /**
- * Run daily 23:59:59 binary settlement
+ * Run daily binary settlement (next day automated cycle)
  */
 async function runDailyBinarySettlement() {
-  console.log('[Mongoose Binary Settlement]: Running 23:59:59 daily binary settlement calculation...');
+  console.log('[Mongoose Binary Settlement]: Running next day automated daily binary settlement calculation...');
   const users = await User.find({
+    'wallet.totalInvested': { $gt: 0 },
     'binaryLegs.legACurrent': { $gte: 1000 },
     'binaryLegs.legBCurrent': { $gte: 1000 },
   });
 
+  const todayKey = new Date().toISOString().slice(0, 10);
   let settledCount = 0;
   for (const user of users) {
     try {
-      const res = await executeUserDailyBinarySettlement(user._id);
-      if (res && res.settled) {
-        settledCount += (res.pairsPaid || 1);
-        console.log(`[Daily 23:59:59 Settlement]: Auto-settled @${user.username} (+${res.rewardUsd} USDT, ${res.pairsPaid} pair(s) paid, ${res.pairsConfiscated} confiscated)`);
+      if (user.binaryLegs?.lastSettledDate !== todayKey) {
+        const res = await executeUserDailyBinarySettlement(user._id);
+        if (res && res.settled) {
+          settledCount += (res.pairsPaid || 1);
+          console.log(`[Next Day Daily Settlement]: Auto-settled @${user.username} (+${res.rewardUsd} USDT, ${res.pairsPaid} pair(s) paid, ${res.pairsConfiscated} confiscated)`);
+        }
       }
     } catch (err) {
-      console.error(`[Daily 23:59:59 Settlement Error for @${user.username}]:`, err.message);
+      console.error(`[Next Day Daily Settlement Error for @${user.username}]:`, err.message);
     }
   }
 
-  console.log(`[Mongoose Binary Settlement]: 23:59:59 daily settlement complete. Settled ${settledCount} pair(s).`);
+  console.log(`[Mongoose Binary Settlement]: Next day daily settlement complete. Settled ${settledCount} pair(s).`);
   return { success: true, settledMiners: settledCount };
 }
 
 /**
- * Schedule automated cron for daily 23:59 settlement
+ * Schedule automated daily binary settlement check
  */
 function scheduleDailyBinarySettlement(callback) {
   const checkIntervalMs = 60 * 1000; // Check every minute
   setInterval(async () => {
-    const now = new Date();
-    if (now.getHours() === 23 && now.getMinutes() === 59) {
-      console.log('[Mongoose Binary Scheduler]: 23:59 reached. Triggering settlement...');
-      if (typeof callback === 'function') {
-        try {
-          await callback();
-        } catch (e) {
-          console.error('[Mongoose Settlement Callback Error]:', e);
-        }
-      } else {
-        await runDailyBinarySettlement();
+    if (typeof callback === 'function') {
+      try {
+        await callback();
+      } catch (e) {
+        console.error('[Mongoose Settlement Callback Error]:', e);
       }
+    } else {
+      await checkAndTriggerDailySettlement();
     }
   }, checkIntervalMs);
 }
@@ -267,7 +274,7 @@ async function placeUserInBinary(userId, targetParentId, preferredPosition = 'A'
 }
 
 /**
- * Execute Daily 23:59 Binary Pairing Settlement for a single user (called on-demand or by real-time countdown timer)
+ * Execute Daily Binary Pairing Settlement for a single user (Next Day Automated Cycle)
  */
 async function executeUserDailyBinarySettlement(userId) {
   const user = await User.findById(userId);
@@ -285,7 +292,7 @@ async function executeUserDailyBinarySettlement(userId) {
       pairsConfiscated: 0,
       confiscatedVolume: 0,
       rewardUsd: 0,
-      message: `User @${user.username} has already been settled for today (${todayKey}). Next binary pairing settlement is at 23:59 tomorrow.`,
+      message: `User @${user.username} has already been settled for today (${todayKey}). Next binary pairing settlement is scheduled for tomorrow.`,
     };
   }
 
@@ -359,7 +366,8 @@ async function executeUserDailyBinarySettlement(userId) {
   user.binaryLegs.legBCurrent = Math.max(0, legBCurr - totalVolumeToDeduct);
   user.binaryLegs.pairsCount = (user.binaryLegs.pairsCount || 0) + pairsToPay;
   user.binaryLegs.lastSettledAt = new Date();
-  user.binaryLegs.lastSettledDate = new Date().toISOString().slice(0, 10);
+  user.binaryLegs.lastSettledDate = todayKey;
+  user.binaryLegs.pairsAchievedDate = null;
 
   if (rewardUsd > 0) {
     user.wallet.usdBalance = (user.wallet.usdBalance || 0) + rewardUsd;
@@ -370,7 +378,7 @@ async function executeUserDailyBinarySettlement(userId) {
       type: 'BINARY_PAIRING_BONUS',
       amount: rewardUsd,
       currency: 'USDT',
-      description: `Daily 23:59 Binary Pairing (${starInfo.name}): ${pairsToPay} pair (${pairsToPay * 1000} USDT volume) matched (10% reward = ${rewardUsd} USDT)`,
+      description: `Daily Binary Pairing (${starInfo.name}): ${pairsToPay} pair (${pairsToPay * 1000} USDT volume) matched (10% reward = ${rewardUsd} USDT)`,
       metadata: {
         pairsMatched: pairsToPay,
         pairsPaid: pairsToPay,
@@ -383,7 +391,7 @@ async function executeUserDailyBinarySettlement(userId) {
         legBAfter: user.binaryLegs.legBCurrent,
         starRank: starInfo.rank,
         starName: starInfo.name,
-        settlementTime: '23:59',
+        settlementCycle: 'Next Day Automated Settlement',
       },
     });
   }
@@ -396,7 +404,7 @@ async function executeUserDailyBinarySettlement(userId) {
       type: 'BINARY_PAIRING_CONFISCATED',
       amount: confiscatedBonusValue,
       currency: 'USDT',
-      description: `${starInfo.name} Rule: ${pairsToConfiscate} pairing (${confiscatedVolume} USDT volume, ${confiscatedBonusValue} USDT reward) confiscated by system at 23:59 (Limit: ${maxPairsAllowed} pair/day)`,
+      description: `${starInfo.name} Rule: ${pairsToConfiscate} pairing (${confiscatedVolume} USDT volume, ${confiscatedBonusValue} USDT reward) confiscated by system (Daily Limit: ${maxPairsAllowed} pair/day)`,
       metadata: {
         pairsMatched: 0,
         pairsConfiscated: pairsToConfiscate,
@@ -405,7 +413,7 @@ async function executeUserDailyBinarySettlement(userId) {
         pairsReady,
         starRank: starInfo.rank,
         starName: starInfo.name,
-        settlementTime: '23:59',
+        settlementCycle: 'Next Day Automated Settlement',
       },
     });
   }
@@ -467,7 +475,7 @@ async function runAutoBinarySettlement() {
 let isSettlingBinary = false;
 
 /**
- * Check and auto-execute daily 23:59 binary settlement when conditions match.
+ * Check and auto-execute next day daily binary settlement when new calendar day arrives.
  * Tracks execution state persistently via SystemSetting to ensure zero missed runs.
  */
 async function checkAndTriggerDailySettlement() {
@@ -486,12 +494,10 @@ async function checkAndTriggerDailySettlement() {
 
     const lastSettledDate = setting?.value || '';
 
-    // Strict condition: Server time must reach 23:59:00 - 23:59:59 window before daily settlement executes
-    const is2359Window = (now.getHours() === 23 && now.getMinutes() >= 59);
-
-    if (is2359Window && lastSettledDate !== dateKey) {
+    // Auto-implement on next day: whenever a new calendar day arrives, execute daily binary settlement!
+    if (lastSettledDate !== dateKey) {
       isSettlingBinary = true;
-      console.log(`[Daily 23:59:59 Automated Settlement]: 23:59:59 reached. Auto-implementing daily settlement for ${dateKey}...`);
+      console.log(`[Next Day Automated Settlement]: New daily cycle reached (${dateKey}). Auto-implementing daily binary settlement...`);
 
       const summary = await runDailyBinarySettlement();
 
@@ -504,14 +510,14 @@ async function checkAndTriggerDailySettlement() {
           await SystemSetting.create({
             key: 'LAST_BINARY_SETTLEMENT_DATE',
             value: dateKey,
-            description: 'Last executed automated daily 23:59 binary settlement date key',
+            description: 'Last executed automated next-day daily binary settlement date key',
           });
         }
       } catch (saveErr) {
         console.warn('[Daily Settlement Setting Save Warning]:', saveErr.message);
       }
 
-      console.log(`[Daily 23:59:59 Automated Settlement]: Auto-settlement complete (${summary.settledMiners || 0} pairs settled, zero manual clicks required).`);
+      console.log(`[Next Day Automated Settlement]: Auto-settlement complete (${summary.settledMiners || 0} pairs settled, zero manual clicks required).`);
     }
   } catch (err) {
     console.error('[Automated Settlement Scheduler Error]:', err.message);
@@ -521,12 +527,12 @@ async function checkAndTriggerDailySettlement() {
 }
 
 /**
- * 100% Automated Daily Settlement Scheduler (auto-triggers daily, zero manual click required)
+ * 100% Automated Next Day Daily Settlement Scheduler (auto-triggers daily on next day cycle, zero manual clicks required)
  */
 function startAutoBinarySettlementScheduler() {
-  const CHECK_INTERVAL_MS = 5 * 1000; // Check every 5 seconds
+  const CHECK_INTERVAL_MS = 10 * 1000; // Check every 10 seconds
 
-  // Catch-up on boot if server was offline/rebooted across the 23:59 threshold
+  // Catch-up on boot if server was offline/rebooted across the midnight threshold
   setTimeout(() => {
     checkAndTriggerDailySettlement();
   }, 2000);
@@ -535,7 +541,7 @@ function startAutoBinarySettlementScheduler() {
     checkAndTriggerDailySettlement();
   }, CHECK_INTERVAL_MS);
 
-  console.log('[Mongoose Binary Engine]: 100% Automated Daily Settlement Scheduler active (auto-triggers at 23:59 daily, zero manual click required).');
+  console.log('[Mongoose Binary Engine]: 100% Automated Next Day Settlement Scheduler active (auto-triggers on next day cycle, zero manual clicks required).');
 }
 
 module.exports = {

@@ -8,20 +8,18 @@ const {
 } = require('../services/binaryService');
 
 /**
- * Helper: ISO and countdown to next 23:59:00
+ * Helper: ISO and countdown to next day 00:00:00 settlement cycle
  */
 function getNextSettlementDetails() {
   const now = new Date();
-  const target = new Date(now);
-  target.setHours(23, 59, 0, 0);
-  if (now >= target) {
-    target.setDate(target.getDate() + 1);
-  }
-  const diffMs = target.getTime() - now.getTime();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  const diffMs = tomorrow.getTime() - now.getTime();
   const hours = Math.floor(diffMs / 3600000);
   const minutes = Math.floor((diffMs % 3600000) / 60000);
   return {
-    nextSettlementAt: target.toISOString(),
+    nextSettlementAt: tomorrow.toISOString(),
     countdownText: `${hours}h ${minutes}m`,
     msRemaining: diffMs,
   };
@@ -37,7 +35,28 @@ const getSummary = async (req, res) => {
     const directCount = await User.countDocuments({ sponsor: user._id });
     const teamCount = await countTotalBinaryDownlines(user._id);
     let starInfo = await evaluateUserStarRank(user._id);
-    const isQualified = Number(user.wallet?.totalInvested || 0) > 0;
+    let isQualified = Number(user.wallet?.totalInvested || 0) > 0;
+
+    // Check Auto-Implementation Rule:
+    // When { ✓ QUALIFIED FOR 10% PAIRING } is achieved, auto implement binary settlement on next day.
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const legACurr = user.binaryLegs?.legACurrent || 0;
+    const legBCurr = user.binaryLegs?.legBCurrent || 0;
+    const pairsReadyNow = Math.min(Math.floor(legACurr / 1000), Math.floor(legBCurr / 1000));
+    const isSettledToday = user.binaryLegs?.lastSettledDate === todayKey;
+    const isAchievedToday = user.binaryLegs?.pairsAchievedDate === todayKey;
+
+    if (isQualified && starInfo.rank >= 1 && pairsReadyNow >= 1 && !isSettledToday && !isAchievedToday) {
+      try {
+        console.log(`[Auto Next-Day Binary Settlement]: Auto-settling @${user.username} on next day cycle...`);
+        await executeUserDailyBinarySettlement(user._id);
+        user = await User.findById(req.user._id);
+        starInfo = await evaluateUserStarRank(user._id);
+        isQualified = Number(user.wallet?.totalInvested || 0) > 0;
+      } catch (autoErr) {
+        console.error(`[Auto Settle getSummary Error for @${user.username}]:`, autoErr.message);
+      }
+    }
 
     const settlementDetails = getNextSettlementDetails();
 
@@ -95,30 +114,33 @@ const getSummary = async (req, res) => {
       pendingConfiscatedPairs,
       pendingConfiscatedVolume,
       pendingBonusEarned,
-      settlementTime: '23:59 Daily',
+      settlementTime: 'Next Day Daily',
+      lastSettledDate: user.binaryLegs?.lastSettledDate || null,
+      pairsAchievedDate: user.binaryLegs?.pairsAchievedDate || null,
+      canAutoSettle: isQualified && starInfo.rank >= 1 && totalPairsReady >= 1 && user.binaryLegs?.lastSettledDate !== todayKey && (!user.binaryLegs?.pairsAchievedDate || user.binaryLegs?.pairsAchievedDate !== todayKey),
       nextSettlementAt: settlementDetails.nextSettlementAt,
       countdown: settlementDetails.countdownText,
       msRemaining: settlementDetails.msRemaining,
       ruleText:
         starInfo.rank >= 10
-          ? '3 Crown User Rule: Min purchased 100,000 USDT mining service and total sales volume ≥ 100,000,000 USDT from below placement tree gives BINARY PAIRING 18 times only per day (settled daily at 23:59). Excess pairings beyond 18 are confiscated by system.'
+          ? '3 Crown User Rule: Min purchased 100,000 USDT mining service and total sales volume ≥ 100,000,000 USDT from below placement tree gives BINARY PAIRING 18 times only per day (settled daily on next day cycle). Excess pairings beyond 18 are confiscated by system.'
           : starInfo.rank === 9
-          ? '2 Crown User Rule: Min purchased 60,000 USDT mining service and total sales volume ≥ 50,000,000 USDT from below placement tree gives BINARY PAIRING 15 times only per day (settled daily at 23:59). Excess pairings beyond 15 are confiscated by system.'
+          ? '2 Crown User Rule: Min purchased 60,000 USDT mining service and total sales volume ≥ 50,000,000 USDT from below placement tree gives BINARY PAIRING 15 times only per day (settled daily on next day cycle). Excess pairings beyond 15 are confiscated by system.'
           : starInfo.rank === 8
-          ? 'Crown User Rule: Min purchased 30,000 USDT mining service and total sales volume ≥ 10,000,000 USDT from below placement tree gives BINARY PAIRING 13 times only per day (settled daily at 23:59). Excess pairings beyond 13 are confiscated by system.'
+          ? 'Crown User Rule: Min purchased 30,000 USDT mining service and total sales volume ≥ 10,000,000 USDT from below placement tree gives BINARY PAIRING 13 times only per day (settled daily on next day cycle). Excess pairings beyond 13 are confiscated by system.'
           : starInfo.rank === 7
-          ? '7 Star User Rule: Min purchased 30,000 USDT mining service and total sales volume ≥ 5,000,000 USDT from below placement tree gives BINARY PAIRING 11 times only per day (settled daily at 23:59). Excess pairings beyond 11 are confiscated by system.'
+          ? '7 Star User Rule: Min purchased 30,000 USDT mining service and total sales volume ≥ 5,000,000 USDT from below placement tree gives BINARY PAIRING 11 times only per day (settled daily on next day cycle). Excess pairings beyond 11 are confiscated by system.'
           : starInfo.rank === 6
-          ? '6 Star User Rule: Min purchased 10,000 USDT mining service and total sales volume ≥ 1,000,000 USDT from below placement tree gives BINARY PAIRING 9 times only per day (settled daily at 23:59). Excess pairings beyond 9 are confiscated by system.'
+          ? '6 Star User Rule: Min purchased 10,000 USDT mining service and total sales volume ≥ 1,000,000 USDT from below placement tree gives BINARY PAIRING 9 times only per day (settled daily on next day cycle). Excess pairings beyond 9 are confiscated by system.'
           : starInfo.rank === 5
-          ? '5 Star User Rule: Min purchased 5,000 USDT mining service and total sales volume ≥ 100,000 USDT from direct placement tree gives BINARY PAIRING 7 times only per day (settled daily at 23:59). Excess pairings beyond 7 are confiscated by system.'
+          ? '5 Star User Rule: Min purchased 5,000 USDT mining service and total sales volume ≥ 100,000 USDT from direct placement tree gives BINARY PAIRING 7 times only per day (settled daily on next day cycle). Excess pairings beyond 7 are confiscated by system.'
           : starInfo.rank === 4
-          ? '4 Star User Rule: Min purchased 5,000 USDT mining service and total sales volume ≥ 50,000 USDT from direct placement tree gives BINARY PAIRING 6 times only per day (settled daily at 23:59). Excess pairings beyond 6 are confiscated by system.'
+          ? '4 Star User Rule: Min purchased 5,000 USDT mining service and total sales volume ≥ 50,000 USDT from direct placement tree gives BINARY PAIRING 6 times only per day (settled daily on next day cycle). Excess pairings beyond 6 are confiscated by system.'
           : starInfo.rank === 3
-          ? '3 Star User Rule: Min purchased 1,000 USDT mining service and total sales volume ≥ 10,000 USDT from direct placement tree gives BINARY PAIRING 4 times only per day (settled daily at 23:59). Excess pairings beyond 4 are confiscated by system.'
+          ? '3 Star User Rule: Min purchased 1,000 USDT mining service and total sales volume ≥ 10,000 USDT from direct placement tree gives BINARY PAIRING 4 times only per day (settled daily on next day cycle). Excess pairings beyond 4 are confiscated by system.'
           : starInfo.rank === 2
-          ? '2 Star User Rule: Min purchased 300 USDT mining service and total sales volume ≥ 2,000 USDT from direct placement tree gives BINARY PAIRING 2 times only per day (settled daily at 23:59). Excess pairings beyond 2 are confiscated by system.'
-          : '1 Star User Rule: Direct placement tree sales volume ≥ 1,000 USDT gives BINARY PAIRING 1 time only per day (settled daily at 23:59). Excess pairings (e.g. 2nd 1,000) are confiscated by system.',
+          ? '2 Star User Rule: Min purchased 300 USDT mining service and total sales volume ≥ 2,000 USDT from direct placement tree gives BINARY PAIRING 2 times only per day (settled daily on next day cycle). Excess pairings beyond 2 are confiscated by system.'
+          : '1 Star User Rule: Direct placement tree sales volume ≥ 1,000 USDT gives BINARY PAIRING 1 time only per day (settled daily on next day cycle). Excess pairings (e.g. 2nd 1,000) are confiscated by system.',
     };
 
     const summaryPayload = {
@@ -130,6 +152,8 @@ const getSummary = async (req, res) => {
       legATotal: user.binaryLegs?.legATotal || 0,
       legBTotal: user.binaryLegs?.legBTotal || 0,
       pairsCount: user.binaryLegs?.pairsCount || 0,
+      lastSettledDate: user.binaryLegs?.lastSettledDate || null,
+      pairsAchievedDate: user.binaryLegs?.pairsAchievedDate || null,
       starRank: user.starRank,
       starBadge: user.starBadge,
       starIcon: user.starIcon,
@@ -387,24 +411,24 @@ const getStarRankingInfo = async (req, res) => {
         countdown: settlementDetails.countdownText,
         rule:
           starInfo.rank >= 10
-            ? '3 Crown user gets BINARY PAIRING 18 times only per day (23:59 daily). Excess pairings beyond 18 are confiscated by system.'
+            ? '3 Crown user gets BINARY PAIRING 18 times only per day (settled daily on next day cycle). Excess pairings beyond 18 are confiscated by system.'
             : starInfo.rank >= 9
-            ? '2 Crown user gets BINARY PAIRING 15 times only per day (23:59 daily). Excess pairings beyond 15 are confiscated by system.'
+            ? '2 Crown user gets BINARY PAIRING 15 times only per day (settled daily on next day cycle). Excess pairings beyond 15 are confiscated by system.'
             : starInfo.rank >= 8
-            ? 'Crown user gets BINARY PAIRING 13 times only per day (23:59 daily). Excess pairings beyond 13 are confiscated by system.'
+            ? 'Crown user gets BINARY PAIRING 13 times only per day (settled daily on next day cycle). Excess pairings beyond 13 are confiscated by system.'
             : starInfo.rank >= 7
-            ? '7 Star user gets BINARY PAIRING 11 times only per day (23:59 daily). Excess pairings beyond 11 are confiscated by system.'
+            ? '7 Star user gets BINARY PAIRING 11 times only per day (settled daily on next day cycle). Excess pairings beyond 11 are confiscated by system.'
             : starInfo.rank >= 6
-            ? '6 Star user gets BINARY PAIRING 9 times only per day (23:59 daily). Excess pairings beyond 9 are confiscated by system.'
+            ? '6 Star user gets BINARY PAIRING 9 times only per day (settled daily on next day cycle). Excess pairings beyond 9 are confiscated by system.'
             : starInfo.rank >= 5
-            ? '5 Star user gets BINARY PAIRING 7 times only per day (23:59 daily). Excess pairings beyond 7 are confiscated by system.'
+            ? '5 Star user gets BINARY PAIRING 7 times only per day (settled daily on next day cycle). Excess pairings beyond 7 are confiscated by system.'
             : starInfo.rank >= 4
-            ? '4 Star user gets BINARY PAIRING 6 times only per day (23:59 daily). Excess pairings beyond 6 are confiscated by system.'
+            ? '4 Star user gets BINARY PAIRING 6 times only per day (settled daily on next day cycle). Excess pairings beyond 6 are confiscated by system.'
             : starInfo.rank === 3
-            ? '3 Star user gets BINARY PAIRING 4 times only per day (23:59 daily). Excess pairings beyond 4 are confiscated by system.'
+            ? '3 Star user gets BINARY PAIRING 4 times only per day (settled daily on next day cycle). Excess pairings beyond 4 are confiscated by system.'
             : starInfo.rank === 2
-            ? '2 Star user gets BINARY PAIRING 2 times only per day (23:59 daily). Excess pairings beyond 2 are confiscated by system.'
-            : '1 Star user gets BINARY PAIRING 1 time only per day (23:59 daily). Excess pairings (e.g. 2nd 1,000) are confiscated by system.',
+            ? '2 Star user gets BINARY PAIRING 2 times only per day (settled daily on next day cycle). Excess pairings beyond 2 are confiscated by system.'
+            : '1 Star user gets BINARY PAIRING 1 time only per day (settled daily on next day cycle). Excess pairings (e.g. 2nd 1,000) are confiscated by system.',
       },
     });
   } catch (error) {
@@ -413,7 +437,7 @@ const getStarRankingInfo = async (req, res) => {
 };
 
 /**
- * Settle daily binary pairing (supports on-demand trigger and countdown timer auto-trigger)
+ * Settle daily binary pairing (supports on-demand trigger and next-day auto-trigger)
  */
 const settleDailyBinaryPairing = async (req, res) => {
   try {
@@ -422,7 +446,7 @@ const settleDailyBinaryPairing = async (req, res) => {
       const summary = await runDailyBinarySettlement();
       return res.status(200).json({
         success: true,
-        message: 'Daily 23:59 binary pairing settlement executed for all users.',
+        message: 'Daily binary pairing settlement executed for all users.',
         summary,
       });
     }
