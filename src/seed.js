@@ -418,10 +418,12 @@ async function seed() {
 
   // 6. System Settings
   const settings = [
-    { key: 'usdt_deposit_address', value: 'TXv2nE8gQ6R4mN9kY7bL1jF5cW3pA8sD6Z', description: 'Official USDT TRC20 Deposit Address' },
+    { key: 'usdt_deposit_address', value: 'TFexSvGJBNDSdW1nUxq1eGiuDtNPSKpznh', description: 'Official USDT TRC20 Deposit Address' },
     { key: 'usdt_deposit_network', value: 'TRC20 (Tron Network)', description: 'Default USDT network' },
-    { key: 'btc_deposit_address', value: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', description: 'Official Bitcoin Native SegWit Address' },
-    { key: 'usdc_deposit_address', value: '0x71C26a6FfE65fF6D19Fe43d57fB0bC182A4', description: 'Official USD Coin (USDC) Address' },
+    { key: 'btc_deposit_address', value: 'bc1pw72qw3lz9dvzvxd90yux74ae46w05zz2vf9ppeunv0f5c3e0aajqgfhejh', description: 'Official Bitcoin Taproot Address' },
+    { key: 'btc_deposit_network', value: 'BTC (Taproot Network)', description: 'Default BTC network' },
+    { key: 'usdc_deposit_address', value: '0x9fA81992F0D8cF28D124992307f89502460732DF', description: 'Official USD Coin (USDC) BNB Address' },
+    { key: 'usdc_deposit_network', value: 'BNB (Binance Network)', description: 'Default USDC network' },
     { key: 'binary_pairing_percent', value: 10, description: '10% Binary Pairing Rate (100 USDT per 1,000)' },
     { key: 'direct_referral_percent', value: 10, description: '10% Instant Direct Referral Reward' },
     { key: 'contract_duration_days', value: 1500, description: 'Enterprise 1,500-day contract lifecycle' },

@@ -255,13 +255,32 @@ const getDepositConfig = async (req, res) => {
       configMap[s.key] = s.value;
     });
 
+    // Detect legacy placeholder addresses to ensure user-configured addresses take precedence
+    const isLegacyUsdt = !configMap.usdt_deposit_address || configMap.usdt_deposit_address === 'TXv2nE8gQ6R4mN9kY7bL1jF5cW3pA8sD6Z';
+    const isLegacyBtc = !configMap.btc_deposit_address || configMap.btc_deposit_address === 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
+    const isLegacyUsdc = !configMap.usdc_deposit_address || configMap.usdc_deposit_address.startsWith('0x71C8') || configMap.usdc_deposit_address.startsWith('0x71C2');
+
+    const usdtAddress = isLegacyUsdt ? 'TFexSvGJBNDSdW1nUxq1eGiuDtNPSKpznh' : configMap.usdt_deposit_address;
+    const btcAddress = isLegacyBtc ? 'bc1pw72qw3lz9dvzvxd90yux74ae46w05zz2vf9ppeunv0f5c3e0aajqgfhejh' : configMap.btc_deposit_address;
+    const usdcAddress = isLegacyUsdc ? '0x9fA81992F0D8cF28D124992307f89502460732DF' : configMap.usdc_deposit_address;
+
+    const btcNetwork = (!configMap.btc_deposit_network || configMap.btc_deposit_network.includes('Native SegWit')) ? 'BTC (Taproot Network)' : configMap.btc_deposit_network;
+    const usdcNetwork = (!configMap.usdc_deposit_network || configMap.usdc_deposit_network.includes('Ethereum') || configMap.usdc_deposit_network.includes('ERC20')) ? 'BNB (Binance Network)' : configMap.usdc_deposit_network;
+
+    const btcInstructions = (!configMap.btc_deposit_instructions || configMap.btc_deposit_instructions.includes('Native SegWit'))
+      ? 'Transfer BTC directly to this Taproot address. Minimum deposit is 0.0001 BTC. Once sent, submit your transaction hash (TxHash) below.'
+      : configMap.btc_deposit_instructions;
+    const usdcInstructions = (!configMap.usdc_deposit_instructions || configMap.usdc_deposit_instructions.includes('ERC20'))
+      ? 'Transfer USDC only via Binance Smart Chain network. Once sent, submit your transaction hash (TxHash) below for prompt verification and balance credit.'
+      : configMap.usdc_deposit_instructions;
+
     const currencies = {
       USDT: {
         currency: 'USDT',
         symbol: '₮',
         name: 'Tether USD',
         network: configMap.usdt_deposit_network || 'TRC20 (Tron Network)',
-        depositAddress: configMap.usdt_deposit_address || 'TXv2nE8gQ6R4mN9kY7bL1jF5cW3pA8sD6Z',
+        depositAddress: usdtAddress,
         instructions: configMap.usdt_deposit_instructions || 'Transfer USDT only via TRC20 network. Once sent, submit your transaction hash (TxHash) below for prompt verification and balance credit.',
         minDeposit: 10,
         decimals: 2,
@@ -270,9 +289,9 @@ const getDepositConfig = async (req, res) => {
         currency: 'BTC',
         symbol: '₿',
         name: 'Bitcoin',
-        network: configMap.btc_deposit_network || 'BTC (Native SegWit Network)',
-        depositAddress: configMap.btc_deposit_address || 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-        instructions: configMap.btc_deposit_instructions || 'Transfer BTC directly to this Native SegWit address. Minimum deposit is 0.0001 BTC. Once sent, submit your transaction hash (TxHash) below.',
+        network: btcNetwork,
+        depositAddress: btcAddress,
+        instructions: btcInstructions,
         minDeposit: 0.0001,
         decimals: 8,
       },
@@ -280,9 +299,9 @@ const getDepositConfig = async (req, res) => {
         currency: 'USDC',
         symbol: '$',
         name: 'USD Coin',
-        network: configMap.usdc_deposit_network || 'ERC20 (Ethereum Network)',
-        depositAddress: configMap.usdc_deposit_address || '0x71C836642F4A4E3302293515456275153A649319',
-        instructions: configMap.usdc_deposit_instructions || 'Transfer USDC only via ERC20 network. Once sent, submit your transaction hash (TxHash) below for prompt verification and balance credit.',
+        network: usdcNetwork,
+        depositAddress: usdcAddress,
+        instructions: usdcInstructions,
         minDeposit: 10,
         decimals: 2,
       },
