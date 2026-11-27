@@ -107,6 +107,7 @@ const listUsers = async (req, res) => {
     const query = {};
     if (search) {
       query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
         { username: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
         { referralCode: { $regex: search, $options: 'i' } },
@@ -114,12 +115,20 @@ const listUsers = async (req, res) => {
     }
 
     const total = await User.countDocuments(query);
-    const users = await User.find(query)
+    const rawUsers = await User.find(query)
       .select('-password')
-      .populate('sponsor', 'username')
+      .populate('sponsor', 'username fullName')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const users = rawUsers.map((u) => ({
+      ...u,
+      id: u.id || u._id,
+      sponsorUsername: u.sponsor?.username || null,
+      sponsorFullName: u.sponsor?.fullName || null,
+    }));
 
     return res.status(200).json({
       success: true,
@@ -239,16 +248,41 @@ const reviewUserKyc = async (req, res) => {
 };
 
 /**
- * Get single user by id
+ * Get single user by id (with sponsor, binaryParent, contracts, and transactions)
  */
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(id).select('-password');
+    const user = await User.findById(id)
+      .select('-password')
+      .populate('sponsor', 'username fullName referralCode')
+      .populate('binaryParent', 'username fullName')
+      .lean();
+
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    return res.status(200).json({ success: true, user });
+
+    const [contracts, transactions, directReferralsCount] = await Promise.all([
+      MiningContract.find({ userId: id }).sort({ createdAt: -1 }).lean(),
+      Transaction.find({ userId: id }).sort({ createdAt: -1 }).limit(500).lean(),
+      User.countDocuments({ sponsor: id }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        ...user,
+        id: user.id || user._id,
+        sponsorUsername: user.sponsor?.username || null,
+        sponsorFullName: user.sponsor?.fullName || null,
+        parentUsername: user.binaryParent?.username || null,
+        directReferralsCount,
+      },
+      contracts,
+      transactions,
+      directReferralsCount,
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -260,11 +294,13 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fullName, email, phone, role, status, starRank, defaultPlacementLeg } = req.body;
+    const { fullName, email, phone, country, address, role, status, starRank, defaultPlacementLeg } = req.body;
     const update = {};
     if (fullName !== undefined) update.fullName = fullName;
     if (email !== undefined) update.email = email;
     if (phone !== undefined) update.phone = phone;
+    if (country !== undefined) update.country = country;
+    if (address !== undefined) update.address = address;
     if (role !== undefined) update.role = role;
     if (status !== undefined) update.status = status;
     if (starRank !== undefined) update.starRank = starRank;

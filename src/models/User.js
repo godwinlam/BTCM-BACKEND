@@ -90,7 +90,7 @@ const userSchema = new mongoose.Schema(
     },
     preferredLanguage: {
       type: String,
-      enum: ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'],
+      enum: ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru', 'th', 'vi'],
       default: 'en',
     },
     phone: {

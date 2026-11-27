@@ -56,7 +56,7 @@ const register = async (req, res) => {
 
     // STRICT BUSINESS RULE: Only a new user who has purchased a mining service package can be placed in the binary placement tree.
     // At registration time, the user is created under their sponsor with unplaced status (binaryParent = null, binaryPosition = null).
-    const validLangs = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'];
+    const validLangs = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru', 'th', 'vi'];
     const chosenLang = validLangs.includes(preferredLanguage) ? preferredLanguage : 'en';
 
     const newUser = new User({
@@ -222,7 +222,7 @@ const updateProfile = async (req, res) => {
       user.defaultPlacementLeg = defaultPlacementLeg;
     }
 
-    const validLangs = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'];
+    const validLangs = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru', 'th', 'vi'];
     if (preferredLanguage && validLangs.includes(preferredLanguage)) {
       user.preferredLanguage = preferredLanguage;
     }
@@ -330,9 +330,9 @@ const submitKyc = async (req, res) => {
 const updateLanguage = async (req, res) => {
   try {
     const { language } = req.body;
-    const valid = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru'];
+    const valid = ['en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'es', 'ru', 'th', 'vi'];
     if (!valid.includes(language)) {
-      return res.status(400).json({ success: false, message: 'Invalid language code. Supported: en, zh-TW, zh-CN, ja, ko, es, ru' });
+      return res.status(400).json({ success: false, message: 'Invalid language code. Supported: en, zh-TW, zh-CN, ja, ko, es, ru, th, vi' });
     }
     const user = await User.findById(req.user._id);
     if (!user) {
